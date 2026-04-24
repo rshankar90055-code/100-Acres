@@ -15,16 +15,18 @@ export async function GET(
       city:cities(id, name, slug, state),
       agent:agents(
         id,
+        user_id,
         agency_name,
-        phone,
         whatsapp_number,
         is_verified,
         rating,
-        total_reviews,
-        profile:profiles(full_name, avatar_url, email)
+        review_count,
+        properties_sold
       )
     `)
     .eq("slug", slug)
+    .eq("is_verified", true)
+    .eq("status", "available")
     .single()
 
   if (error) {

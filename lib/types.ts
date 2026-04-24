@@ -40,6 +40,9 @@ export interface Agent {
   properties_sold: number
   subscription_tier: 'free' | 'basic' | 'premium'
   subscription_expires_at: string | null
+  trial_started_at?: string | null
+  trial_expires_at?: string | null
+  has_used_trial?: boolean
   created_at: string
   updated_at: string
   profile?: Profile
@@ -116,8 +119,10 @@ export interface AreaInsight {
   locality: string
   water_supply_rating: number | null
   power_supply_rating: number | null
+  electricity_rating?: number | null
   safety_rating: number | null
   connectivity_rating: number | null
+  road_rating?: number | null
   schools_nearby: string[] | null
   hospitals_nearby: string[] | null
   markets_nearby: string[] | null
@@ -138,6 +143,76 @@ export interface AgentReview {
   is_verified: boolean
   created_at: string
   profile?: Profile
+}
+
+export interface Notification {
+  id: string
+  user_id: string
+  title: string
+  body: string | null
+  link: string | null
+  is_read: boolean
+  metadata: Record<string, unknown> | null
+  created_at: string
+}
+
+export interface Reel {
+  id: string
+  agent_id: string
+  property_id: string | null
+  city_id: string | null
+  locality: string | null
+  title: string | null
+  caption: string | null
+  video_url: string
+  thumbnail_url: string | null
+  contact_phone: string | null
+  contact_whatsapp: string | null
+  like_count: number
+  comment_count: number
+  share_count: number
+  is_active: boolean
+  created_at: string
+  updated_at: string
+  agent?: Agent
+  city?: City
+}
+
+export interface MarketplaceListing {
+  id: string
+  agent_id: string
+  city_id: string | null
+  title: string
+  slug: string
+  description: string | null
+  category: 'car' | 'bike' | 'electronics' | 'appliance'
+  subcategory: string | null
+  listing_type: 'sale' | 'rent'
+  condition: 'new' | 'like_new' | 'good' | 'fair' | null
+  price: number
+  brand: string | null
+  model: string | null
+  year: number | null
+  mileage_km: number | null
+  fuel_type: string | null
+  transmission: string | null
+  owner_count: number | null
+  warranty_months: number | null
+  locality: string | null
+  address: string | null
+  contact_phone: string | null
+  contact_whatsapp: string | null
+  images: string[] | null
+  video_url: string | null
+  is_featured: boolean
+  is_verified: boolean
+  is_active: boolean
+  status: 'available' | 'pending' | 'sold'
+  view_count: number
+  created_at: string
+  updated_at: string
+  agent?: Agent
+  city?: City
 }
 
 export type PropertyType = Property['property_type']

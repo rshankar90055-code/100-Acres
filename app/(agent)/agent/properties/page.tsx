@@ -8,10 +8,11 @@ import {
   Building2, 
   Eye, 
   Edit, 
-  Trash2,
-  MapPin
+  MapPin,
+  ShieldCheck
 } from 'lucide-react'
 import { DeletePropertyButton } from '@/components/agent/delete-property-button'
+import { PropertyStatusSelect } from '@/components/agent/property-status-select'
 
 export default async function AgentPropertiesPage() {
   const supabase = await createClient()
@@ -103,6 +104,14 @@ export default async function AgentPropertiesPage() {
                       <Badge variant="outline">
                         {property.listing_type === 'sale' ? 'For Sale' : 'For Rent'}
                       </Badge>
+                      {property.is_verified ? (
+                        <Badge className="bg-green-100 text-green-800">
+                          <ShieldCheck className="mr-1 h-3 w-3" />
+                          Verified
+                        </Badge>
+                      ) : (
+                        <Badge variant="secondary">Awaiting verification</Badge>
+                      )}
                       {!property.is_active && (
                         <Badge variant="destructive">Inactive</Badge>
                       )}
@@ -123,6 +132,12 @@ export default async function AgentPropertiesPage() {
                         <span className="text-sm font-normal text-muted-foreground">/month</span>
                       )}
                     </p>
+
+                    {!property.is_verified && (
+                      <p className="mt-2 text-sm text-muted-foreground">
+                        This listing stays off-market until local verification is completed.
+                      </p>
+                    )}
                   </div>
 
                   {/* Stats */}
@@ -138,6 +153,10 @@ export default async function AgentPropertiesPage() {
 
                   {/* Actions */}
                   <div className="flex gap-2 md:flex-col">
+                    <PropertyStatusSelect
+                      propertyId={property.id}
+                      currentStatus={property.status}
+                    />
                     <Link href={`/agent/properties/${property.id}/edit`}>
                       <Button variant="outline" size="sm" className="gap-2">
                         <Edit className="h-4 w-4" />

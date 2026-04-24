@@ -1,15 +1,28 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { CheckCircle, Loader2, XCircle } from 'lucide-react'
-import { getCheckoutSession } from '@/app/actions/stripe'
+import { finalizeCheckoutSession, getCheckoutSession } from '@/app/actions/stripe'
 import { useLanguage } from '@/lib/language-context'
 
-export default function SuccessPage() {
+function SuccessPageLoading({ message }: { message: string }) {
+  return (
+    <div className="flex min-h-[60vh] items-center justify-center">
+      <Card className="w-full max-w-md">
+        <CardContent className="flex flex-col items-center py-12">
+          <Loader2 className="h-12 w-12 animate-spin text-primary" />
+          <p className="mt-4 text-muted-foreground">{message}</p>
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
+
+function SuccessPageContent() {
   const searchParams = useSearchParams()
   const sessionId = searchParams.get('session_id')
   const [status, setStatus] = useState<'loading' | 'success' | 'error'>('loading')
@@ -27,6 +40,7 @@ export default function SuccessPage() {
       if (result.error || result.status !== 'complete') {
         setStatus('error')
       } else {
+        await finalizeCheckoutSession(sessionId)
         setStatus('success')
         setEmail(result.customerEmail || null)
       }
@@ -36,16 +50,7 @@ export default function SuccessPage() {
   }, [sessionId])
 
   if (status === 'loading') {
-    return (
-      <div className="flex min-h-[60vh] items-center justify-center">
-        <Card className="w-full max-w-md">
-          <CardContent className="flex flex-col items-center py-12">
-            <Loader2 className="h-12 w-12 animate-spin text-primary" />
-            <p className="mt-4 text-muted-foreground">{t('pricing.verifying')}</p>
-          </CardContent>
-        </Card>
-      </div>
-    )
+    return <SuccessPageLoading message={t('pricing.verifying')} />
   }
 
   if (status === 'error') {
@@ -92,10 +97,20 @@ export default function SuccessPage() {
             <Link href="/agent/dashboard">{t('pricing.goToDashboard')}</Link>
           </Button>
           <Button asChild variant="outline" className="w-full">
-            <Link href="/agent/listings">{t('pricing.manageListings')}</Link>
+            <Link href="/agent/properties">{t('pricing.manageListings')}</Link>
           </Button>
         </CardContent>
       </Card>
     </div>
+  )
+}
+
+export default function SuccessPage() {
+  const { t } = useLanguage()
+
+  return (
+    <Suspense fallback={<SuccessPageLoading message={t('pricing.verifying')} />}>
+      <SuccessPageContent />
+    </Suspense>
   )
 }

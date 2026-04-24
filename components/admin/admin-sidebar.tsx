@@ -10,12 +10,14 @@ import {
   MapPin, 
   Settings,
   Shield,
-  BarChart3
+  BarChart3,
+  Laptop
 } from 'lucide-react'
 
 const navItems = [
   { href: '/admin', icon: LayoutDashboard, label: 'Dashboard' },
   { href: '/admin/properties', icon: Building2, label: 'Properties' },
+  { href: '/admin/marketplace', icon: Laptop, label: 'Marketplace' },
   { href: '/admin/agents', icon: Users, label: 'Agents' },
   { href: '/admin/cities', icon: MapPin, label: 'Cities' },
   { href: '/admin/users', icon: Shield, label: 'Users' },

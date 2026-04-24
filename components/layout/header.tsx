@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation'
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
+import { NotificationsMenu } from '@/components/layout/notifications-menu'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -24,20 +25,32 @@ import {
   LayoutDashboard,
   Settings,
   UserPlus,
-  Languages
+  PlaySquare,
+  Store,
+  Bookmark,
+  MessageCircle
 } from 'lucide-react'
 import { LanguageSwitcher } from './language-switcher'
 import type { User as SupabaseUser } from '@supabase/supabase-js'
 import type { Profile } from '@/lib/types'
+import { hasSupabaseEnv } from '@/lib/site-data'
+import { formatPhoneForDisplay } from '@/lib/phone'
+import { useMarketplaceUnreadCount } from '@/lib/hooks/use-marketplace-unread-count'
 
 export function Header() {
   const pathname = usePathname()
   const [user, setUser] = useState<SupabaseUser | null>(null)
   const [profile, setProfile] = useState<Profile | null>(null)
   const [isOpen, setIsOpen] = useState(false)
-  const supabase = createClient()
+  const supabase = hasSupabaseEnv ? createClient() : null
+  const { unreadCount: marketplaceUnreadCount, route: marketplaceChatRoute } =
+    useMarketplaceUnreadCount()
 
   useEffect(() => {
+    if (!supabase) {
+      return
+    }
+
     const getUser = async () => {
       const { data: { user } } = await supabase.auth.getUser()
       setUser(user)
@@ -62,6 +75,7 @@ export function Header() {
   }, [supabase])
 
   const handleSignOut = async () => {
+    if (!supabase) return
     await supabase.auth.signOut()
     window.location.href = '/'
   }
@@ -69,6 +83,8 @@ export function Header() {
   const navLinks = [
     { href: '/', label: 'Home', icon: Home },
     { href: '/properties', label: 'Properties', icon: Building2 },
+    { href: '/marketplace', label: 'Marketplace', icon: Store },
+    { href: '/reels', label: 'Videos', icon: PlaySquare },
   ]
 
   const getInitials = (name: string | null | undefined) => {
@@ -115,6 +131,17 @@ export function Header() {
           
           {user ? (
             <>
+              <NotificationsMenu />
+              <Link href={marketplaceChatRoute} className="hidden md:block">
+                <Button variant="ghost" size="icon" className="relative">
+                  <MessageCircle className="h-5 w-5" />
+                  {marketplaceUnreadCount > 0 ? (
+                    <span className="absolute right-1 top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold text-primary-foreground">
+                      {marketplaceUnreadCount}
+                    </span>
+                  ) : null}
+                </Button>
+              </Link>
               <Link href="/saved" className="hidden md:block">
                 <Button variant="ghost" size="icon">
                   <Heart className="h-5 w-5" />
@@ -140,7 +167,9 @@ export function Header() {
                     </Avatar>
                     <div className="flex flex-col">
                       <p className="text-sm font-medium">{profile?.full_name || 'User'}</p>
-                      <p className="text-xs text-muted-foreground">{user.email}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {profile?.phone ? formatPhoneForDisplay(profile.phone) : 'Phone account'}
+                      </p>
                     </div>
                   </div>
                   <DropdownMenuSeparator />
@@ -154,6 +183,25 @@ export function Header() {
                     <Link href="/saved" className="cursor-pointer">
                       <Heart className="mr-2 h-4 w-4" />
                       Saved Properties
+                    </Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem asChild>
+                    <Link href="/saved?tab=marketplace" className="cursor-pointer">
+                      <Bookmark className="mr-2 h-4 w-4" />
+                      Saved Marketplace
+                    </Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem asChild>
+                    <Link href={marketplaceChatRoute} className="flex w-full items-center justify-between">
+                      <span className="flex items-center">
+                        <MessageCircle className="mr-2 h-4 w-4" />
+                        Marketplace Chats
+                      </span>
+                      {marketplaceUnreadCount > 0 ? (
+                        <span className="rounded-full bg-primary px-2 py-0.5 text-[10px] font-semibold text-primary-foreground">
+                          {marketplaceUnreadCount}
+                        </span>
+                      ) : null}
                     </Link>
                   </DropdownMenuItem>
                   {profile?.role === 'user' && (
@@ -220,6 +268,25 @@ export function Header() {
                       <Button variant="ghost" className="w-full justify-start gap-2">
                         <Heart className="h-4 w-4" />
                         Saved
+                      </Button>
+                    </Link>
+                    <Link href="/saved?tab=marketplace" onClick={() => setIsOpen(false)}>
+                      <Button variant="ghost" className="w-full justify-start gap-2">
+                        <Bookmark className="h-4 w-4" />
+                        Saved Market
+                      </Button>
+                    </Link>
+                    <Link href={marketplaceChatRoute} onClick={() => setIsOpen(false)}>
+                      <Button variant="ghost" className="flex w-full items-center justify-between gap-2">
+                        <span className="flex items-center gap-2">
+                          <MessageCircle className="h-4 w-4" />
+                          Market Chats
+                        </span>
+                        {marketplaceUnreadCount > 0 ? (
+                          <span className="rounded-full bg-primary px-2 py-0.5 text-[10px] font-semibold text-primary-foreground">
+                            {marketplaceUnreadCount}
+                          </span>
+                        ) : null}
                       </Button>
                     </Link>
                     <Link href={getDashboardLink()} onClick={() => setIsOpen(false)}>

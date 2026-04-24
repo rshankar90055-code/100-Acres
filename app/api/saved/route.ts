@@ -70,7 +70,7 @@ export async function POST(request: NextRequest) {
     .select("id")
     .eq("user_id", user.id)
     .eq("property_id", property_id)
-    .single()
+    .maybeSingle()
 
   if (existing) {
     return NextResponse.json(

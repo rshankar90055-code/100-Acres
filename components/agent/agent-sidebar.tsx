@@ -12,7 +12,9 @@ import {
   Plus, 
   Settings,
   BadgeCheck,
-  Star
+  Star,
+  Store,
+  MessageCircle
 } from 'lucide-react'
 import type { Agent } from '@/lib/types'
 
@@ -24,6 +26,9 @@ const navItems = [
   { href: '/agent/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
   { href: '/agent/properties', icon: Building2, label: 'My Properties' },
   { href: '/agent/properties/new', icon: Plus, label: 'Add Property' },
+  { href: '/agent/marketplace', icon: Store, label: 'Marketplace' },
+  { href: '/agent/marketplace/new', icon: Plus, label: 'Add Listing' },
+  { href: '/agent/marketplace/inquiries', icon: MessageCircle, label: 'Market Chats' },
   { href: '/agent/leads', icon: Users, label: 'Leads' },
   { href: '/agent/settings', icon: Settings, label: 'Settings' },
 ]

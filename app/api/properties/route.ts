@@ -24,11 +24,15 @@ export async function GET(request: NextRequest) {
       city:cities(id, name, slug, state),
       agent:agents(
         id,
+        user_id,
         agency_name,
+        whatsapp_number,
         is_verified,
-        profile:profiles(full_name, avatar_url)
+        review_count,
+        properties_sold
       )
     `, { count: "exact" })
+    .eq("is_verified", true)
     .order("created_at", { ascending: false })
     .range(offset, offset + limit - 1)
 
@@ -133,6 +137,20 @@ export async function POST(request: NextRequest) {
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 })
+  }
+
+  if (data?.id) {
+    const { error: verificationError } = await supabase
+      .from("property_verifications")
+      .insert({
+        property_id: data.id,
+        agent_id: agent.id,
+        status: "pending",
+      })
+
+    if (verificationError) {
+      console.warn("Property verification workflow setup failed:", verificationError)
+    }
   }
 
   return NextResponse.json({ property: data }, { status: 201 })

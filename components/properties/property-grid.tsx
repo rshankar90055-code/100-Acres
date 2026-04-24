@@ -3,6 +3,8 @@ import { PropertyCard } from '@/components/properties/property-card'
 import { Button } from '@/components/ui/button'
 import Link from 'next/link'
 import { ChevronLeft, ChevronRight, SearchX } from 'lucide-react'
+import { filterDemoProperties, hasSupabaseEnv } from '@/lib/site-data'
+import type { Property } from '@/lib/types'
 
 interface SearchParams {
   q?: string
@@ -20,87 +22,98 @@ interface SearchParams {
 const ITEMS_PER_PAGE = 12
 
 export async function PropertyGrid({ searchParams }: { searchParams: SearchParams }) {
-  const supabase = await createClient()
   const page = parseInt(searchParams.page || '1')
   const offset = (page - 1) * ITEMS_PER_PAGE
 
-  // Build query
-  let query = supabase
-    .from('properties')
-    .select(`
-      *,
-      city:cities(*),
-      agent:agents(*, profile:profiles(*))
-    `, { count: 'exact' })
-    .eq('is_active', true)
-    .eq('status', 'available')
+  let properties: Property[] = []
+  let count = 0
 
-  // Apply filters
-  if (searchParams.q) {
-    query = query.or(
-      `title.ilike.%${searchParams.q}%,locality.ilike.%${searchParams.q}%,address.ilike.%${searchParams.q}%`
-    )
-  }
+  if (!hasSupabaseEnv) {
+    const filtered = filterDemoProperties(searchParams)
+    properties = filtered.slice(offset, offset + ITEMS_PER_PAGE)
+    count = filtered.length
+  } else {
+    try {
+      const supabase = await createClient()
 
-  if (searchParams.city) {
-    // First get city id from slug
-    const { data: city } = await supabase
-      .from('cities')
-      .select('id')
-      .eq('slug', searchParams.city)
-      .single()
-    
-    if (city) {
-      query = query.eq('city_id', city.id)
+      let query = supabase
+        .from('properties')
+        .select(
+          `
+            *,
+            city:cities(*),
+            agent:agents(*, profile:profiles(*))
+          `,
+          { count: 'exact' },
+        )
+        .eq('is_active', true)
+        .eq('is_verified', true)
+        .eq('status', 'available')
+
+      if (searchParams.q) {
+        query = query.or(
+          `title.ilike.%${searchParams.q}%,locality.ilike.%${searchParams.q}%,address.ilike.%${searchParams.q}%`,
+        )
+      }
+
+      if (searchParams.city) {
+        const { data: city } = await supabase
+          .from('cities')
+          .select('id')
+          .eq('slug', searchParams.city)
+          .single()
+
+        if (city) {
+          query = query.eq('city_id', city.id)
+        }
+      }
+
+      if (searchParams.type) {
+        query = query.eq('property_type', searchParams.type)
+      }
+
+      if (searchParams.listing) {
+        query = query.eq('listing_type', searchParams.listing)
+      }
+
+      if (searchParams.bedrooms) {
+        const beds = parseInt(searchParams.bedrooms)
+        query = beds >= 5 ? query.gte('bedrooms', 5) : query.eq('bedrooms', beds)
+      }
+
+      if (searchParams.price) {
+        const [min, max] = searchParams.price.split('-').map(Number)
+        if (min) query = query.gte('price', min)
+        if (max) query = query.lte('price', max)
+      }
+
+      switch (searchParams.sort) {
+        case 'price_low':
+          query = query.order('price', { ascending: true })
+          break
+        case 'price_high':
+          query = query.order('price', { ascending: false })
+          break
+        case 'area_high':
+          query = query.order('area_sqft', { ascending: false })
+          break
+        default:
+          query = query.order('created_at', { ascending: false })
+      }
+
+      const result = await query.range(offset, offset + ITEMS_PER_PAGE - 1)
+      properties = (result.data as Property[]) || []
+      count = result.count || 0
+    } catch {
+      const filtered = filterDemoProperties(searchParams)
+      properties = filtered.slice(offset, offset + ITEMS_PER_PAGE)
+      count = filtered.length
     }
   }
 
-  if (searchParams.type) {
-    query = query.eq('property_type', searchParams.type)
-  }
+  const totalPages = Math.ceil(count / ITEMS_PER_PAGE)
 
-  if (searchParams.listing) {
-    query = query.eq('listing_type', searchParams.listing)
-  }
-
-  if (searchParams.bedrooms) {
-    const beds = parseInt(searchParams.bedrooms)
-    if (beds >= 5) {
-      query = query.gte('bedrooms', 5)
-    } else {
-      query = query.eq('bedrooms', beds)
-    }
-  }
-
-  if (searchParams.price) {
-    const [min, max] = searchParams.price.split('-').map(Number)
-    if (min) query = query.gte('price', min)
-    if (max) query = query.lte('price', max)
-  }
-
-  // Apply sorting
-  switch (searchParams.sort) {
-    case 'price_low':
-      query = query.order('price', { ascending: true })
-      break
-    case 'price_high':
-      query = query.order('price', { ascending: false })
-      break
-    case 'area_high':
-      query = query.order('area_sqft', { ascending: false })
-      break
-    default:
-      query = query.order('created_at', { ascending: false })
-  }
-
-  // Apply pagination
-  query = query.range(offset, offset + ITEMS_PER_PAGE - 1)
-
-  const { data: properties, count } = await query
-
-  const totalPages = Math.ceil((count || 0) / ITEMS_PER_PAGE)
-
-  if (!properties || properties.length === 0) {
+  if (properties.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-border bg-card p-12 text-center">
         <SearchX className="mb-4 h-16 w-16 text-muted-foreground/50" />
@@ -108,7 +121,7 @@ export async function PropertyGrid({ searchParams }: { searchParams: SearchParam
           No properties found
         </h3>
         <p className="mb-6 max-w-md text-muted-foreground">
-          We couldn&apos;t find any properties matching your criteria. 
+          We couldn&apos;t find any properties matching your criteria.
           Try adjusting your filters or search in a different area.
         </p>
         <Link href="/properties">
@@ -118,7 +131,6 @@ export async function PropertyGrid({ searchParams }: { searchParams: SearchParam
     )
   }
 
-  // Build pagination URL
   const buildPageUrl = (pageNum: number) => {
     const params = new URLSearchParams()
     if (searchParams.q) params.set('q', searchParams.q)
@@ -134,20 +146,17 @@ export async function PropertyGrid({ searchParams }: { searchParams: SearchParam
 
   return (
     <div>
-      {/* Results Count */}
       <div className="mb-6 text-sm text-muted-foreground">
-        Showing {offset + 1}-{Math.min(offset + ITEMS_PER_PAGE, count || 0)} of{' '}
-        {count?.toLocaleString()} properties
+        Showing {offset + 1}-{Math.min(offset + ITEMS_PER_PAGE, count)} of{' '}
+        {count.toLocaleString()} properties
       </div>
 
-      {/* Property Grid */}
       <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         {properties.map((property) => (
           <PropertyCard key={property.id} property={property} />
         ))}
       </div>
 
-      {/* Pagination */}
       {totalPages > 1 && (
         <div className="mt-12 flex items-center justify-center gap-2">
           <Link href={buildPageUrl(page - 1)}>
@@ -162,7 +171,6 @@ export async function PropertyGrid({ searchParams }: { searchParams: SearchParam
           </Link>
 
           <div className="flex items-center gap-1">
-            {/* First page */}
             {page > 3 && (
               <>
                 <Link href={buildPageUrl(1)}>
@@ -174,22 +182,20 @@ export async function PropertyGrid({ searchParams }: { searchParams: SearchParam
               </>
             )}
 
-            {/* Page numbers around current */}
             {Array.from({ length: totalPages }, (_, i) => i + 1)
-              .filter((p) => p >= page - 2 && p <= page + 2)
-              .map((p) => (
-                <Link key={p} href={buildPageUrl(p)}>
+              .filter((currentPage) => currentPage >= page - 2 && currentPage <= page + 2)
+              .map((currentPage) => (
+                <Link key={currentPage} href={buildPageUrl(currentPage)}>
                   <Button
-                    variant={p === page ? 'default' : 'ghost'}
+                    variant={currentPage === page ? 'default' : 'ghost'}
                     size="sm"
                     className="min-w-[40px]"
                   >
-                    {p}
+                    {currentPage}
                   </Button>
                 </Link>
               ))}
 
-            {/* Last page */}
             {page < totalPages - 2 && (
               <>
                 {page < totalPages - 3 && (

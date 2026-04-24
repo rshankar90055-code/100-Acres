@@ -1,4 +1,5 @@
 import { Suspense } from 'react'
+import type { Metadata } from 'next'
 import { createClient } from '@/lib/supabase/server'
 import { Header } from '@/components/layout/header'
 import { Footer } from '@/components/layout/footer'
@@ -6,7 +7,23 @@ import { PropertyFilters } from '@/components/properties/property-filters'
 import { PropertyGrid } from '@/components/properties/property-grid'
 import { PropertyGridSkeleton } from '@/components/properties/property-grid-skeleton'
 import { PropertyMapWrapper } from '@/components/properties/property-map-wrapper'
+import { getDemoCities, hasSupabaseEnv } from '@/lib/site-data'
 import type { City } from '@/lib/types'
+
+export const metadata: Metadata = {
+  title: 'Verified Properties in Karnataka | 100acres',
+  description:
+    'Browse verified properties for sale and rent across Karnataka with city filters, local agent support, and map-based discovery.',
+  alternates: {
+    canonical: '/properties',
+  },
+  openGraph: {
+    title: 'Verified Properties in Karnataka | 100acres',
+    description:
+      'Browse verified properties for sale and rent across Karnataka with city filters, local agent support, and map-based discovery.',
+    url: '/properties',
+  },
+}
 
 interface SearchParams {
   q?: string
@@ -27,14 +44,24 @@ export default async function PropertiesPage({
   searchParams: Promise<SearchParams>
 }) {
   const params = await searchParams
-  const supabase = await createClient()
+  let cities: City[] = getDemoCities()
 
-  // Fetch cities for filter dropdown
-  const { data: cities } = await supabase
-    .from('cities')
-    .select('*')
-    .eq('is_active', true)
-    .order('name')
+  if (hasSupabaseEnv) {
+    try {
+      const supabase = await createClient()
+      const { data } = await supabase
+        .from('cities')
+        .select('*')
+        .eq('is_active', true)
+        .order('name')
+
+      if (data?.length) {
+        cities = data as City[]
+      }
+    } catch {
+      // Keep demo cities for public browsing.
+    }
+  }
 
   const isMapView = params.view === 'map'
 
@@ -42,7 +69,6 @@ export default async function PropertiesPage({
     <div className="min-h-screen bg-background">
       <Header />
       <main className="container mx-auto px-4 py-8">
-        {/* Page Header */}
         <div className="mb-8">
           <h1 className="mb-2 text-3xl font-bold tracking-tight text-foreground md:text-4xl">
             Find Your Perfect Property
@@ -52,10 +78,8 @@ export default async function PropertiesPage({
           </p>
         </div>
 
-        {/* Filters with View Toggle */}
-        <PropertyFilters cities={(cities as City[]) || []} showViewToggle />
+        <PropertyFilters cities={cities} showViewToggle />
 
-        {/* Property Grid or Map View */}
         {isMapView ? (
           <Suspense fallback={<div className="h-[500px] animate-pulse rounded-xl bg-muted" />}>
             <PropertyMapWrapper searchParams={params} />

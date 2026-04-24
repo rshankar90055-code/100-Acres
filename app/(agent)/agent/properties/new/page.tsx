@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { PropertyForm } from '@/components/agent/property-form'
+import { getCreatorAccessLabel, hasCreatorAccess } from '@/lib/access'
 
 export default async function NewPropertyPage() {
   const supabase = await createClient()
@@ -11,6 +12,14 @@ export default async function NewPropertyPage() {
     .eq('is_active', true)
     .order('name')
 
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  const [{ data: agent }, { data: profile }] = await Promise.all([
+    supabase.from('agents').select('*').eq('user_id', user?.id || '').single(),
+    supabase.from('profiles').select('*').eq('id', user?.id || '').single(),
+  ])
+
   return (
     <div className="space-y-6">
       <div>
@@ -20,7 +29,11 @@ export default async function NewPropertyPage() {
         </p>
       </div>
 
-      <PropertyForm cities={cities || []} />
+      <PropertyForm
+        cities={cities || []}
+        canManageMedia={hasCreatorAccess(agent, profile)}
+        mediaAccessLabel={getCreatorAccessLabel(agent, profile)}
+      />
     </div>
   )
 }

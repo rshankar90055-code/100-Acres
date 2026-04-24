@@ -6,6 +6,7 @@ import {
   Zap, 
   Shield, 
   Car, 
+  Route,
   GraduationCap,
   Stethoscope,
   ShoppingBag,
@@ -60,8 +61,10 @@ export function AreaInsights({ insights }: AreaInsightsProps) {
   const hasRatings = 
     insights.water_supply_rating || 
     insights.power_supply_rating || 
+    insights.electricity_rating ||
     insights.safety_rating || 
-    insights.connectivity_rating
+    insights.connectivity_rating ||
+    insights.road_rating
 
   const hasNearby = 
     (insights.schools_nearby && insights.schools_nearby.length > 0) ||
@@ -94,7 +97,7 @@ export function AreaInsights({ insights }: AreaInsightsProps) {
             />
             <RatingBar 
               label="Power Supply" 
-              rating={insights.power_supply_rating} 
+              rating={insights.power_supply_rating ?? insights.electricity_rating ?? null} 
               icon={Zap}
             />
             <RatingBar 
@@ -106,6 +109,11 @@ export function AreaInsights({ insights }: AreaInsightsProps) {
               label="Connectivity" 
               rating={insights.connectivity_rating} 
               icon={Car}
+            />
+            <RatingBar 
+              label="Road Conditions" 
+              rating={insights.road_rating ?? null} 
+              icon={Route}
             />
           </div>
         )}

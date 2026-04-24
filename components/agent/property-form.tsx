@@ -15,14 +15,24 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Checkbox } from '@/components/ui/checkbox'
+import { Progress } from '@/components/ui/progress'
 import { toast } from 'sonner'
-import { Loader2, Plus, X } from 'lucide-react'
+import { ImagePlus, Loader2, Upload, Video, X } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
+import {
+  buildStoragePath,
+  formatFileSize,
+  PROPERTY_IMAGES_BUCKET,
+  PROPERTY_VIDEOS_BUCKET,
+  uploadFileWithProgress,
+} from '@/lib/media'
 import type { City, Property } from '@/lib/types'
 
 interface PropertyFormProps {
   cities: City[]
   property?: Property
+  canManageMedia?: boolean
+  mediaAccessLabel?: string
 }
 
 const propertyTypes = [
@@ -56,6 +66,16 @@ const commonAmenities = [
   'Clubhouse', 'Intercom', 'CCTV', 'Fire Safety', 'Visitor Parking'
 ]
 
+const MAX_IMAGES = 10
+const MAX_IMAGE_SIZE_BYTES = 20 * 1024 * 1024
+const MAX_VIDEO_SIZE_BYTES = 250 * 1024 * 1024
+
+interface PendingUploadFile {
+  id: string
+  file: File
+  previewUrl: string
+}
+
 function generateSlug(title: string): string {
   return title
     .toLowerCase()
@@ -63,10 +83,20 @@ function generateSlug(title: string): string {
     .replace(/(^-|-$)/g, '') + '-' + Date.now().toString(36)
 }
 
-export function PropertyForm({ cities, property }: PropertyFormProps) {
+export function PropertyForm({
+  cities,
+  property,
+  canManageMedia = false,
+  mediaAccessLabel = 'Upgrade or start your free trial to add images and videos.',
+}: PropertyFormProps) {
   const router = useRouter()
   const isEditing = !!property
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [isUploadingMedia, setIsUploadingMedia] = useState(false)
+  const [imageUploadProgress, setImageUploadProgress] = useState<Record<string, number>>({})
+  const [videoUploadProgress, setVideoUploadProgress] = useState(0)
+  const [isDraggingImages, setIsDraggingImages] = useState(false)
+  const [isDraggingVideo, setIsDraggingVideo] = useState(false)
   const [formData, setFormData] = useState({
     title: property?.title || '',
     description: property?.description || '',
@@ -77,6 +107,8 @@ export function PropertyForm({ cities, property }: PropertyFormProps) {
     locality: property?.locality || '',
     address: property?.address || '',
     landmark: property?.landmark || '',
+    latitude: property?.latitude?.toString() || '',
+    longitude: property?.longitude?.toString() || '',
     bedrooms: property?.bedrooms?.toString() || '',
     bathrooms: property?.bathrooms?.toString() || '',
     area_sqft: property?.area_sqft?.toString() || '',
@@ -85,11 +117,13 @@ export function PropertyForm({ cities, property }: PropertyFormProps) {
     furnishing: property?.furnishing || '',
     facing: property?.facing || '',
     age_of_property: property?.age_of_property || '',
+    video_url: property?.video_url || '',
     amenities: property?.amenities || [],
     is_active: property?.is_active ?? true,
   })
   const [imageUrls, setImageUrls] = useState<string[]>(property?.images || [])
-  const [newImageUrl, setNewImageUrl] = useState('')
+  const [pendingImages, setPendingImages] = useState<PendingUploadFile[]>([])
+  const [pendingVideo, setPendingVideo] = useState<PendingUploadFile | null>(null)
 
   const handleAmenityToggle = (amenity: string) => {
     setFormData((prev) => ({
@@ -100,15 +134,183 @@ export function PropertyForm({ cities, property }: PropertyFormProps) {
     }))
   }
 
-  const handleAddImage = () => {
-    if (newImageUrl && !imageUrls.includes(newImageUrl)) {
-      setImageUrls([...imageUrls, newImageUrl])
-      setNewImageUrl('')
+  const addImageFiles = (files: File[]) => {
+    if (!canManageMedia) {
+      toast.error('Only paid or free-trial creator accounts can upload property images.')
+      return
     }
+    if (files.length === 0) return
+
+    const selectedImages = files.filter((file) => file.type.startsWith('image/'))
+    if (selectedImages.length !== files.length) {
+      toast.error('Only image files can be added in the image section.')
+    }
+
+    const oversizedImage = selectedImages.find((file) => file.size > MAX_IMAGE_SIZE_BYTES)
+    if (oversizedImage) {
+      toast.error(`"${oversizedImage.name}" is larger than 20 MB.`)
+      return
+    }
+
+    const availableSlots = MAX_IMAGES - imageUrls.length - pendingImages.length
+    if (availableSlots <= 0) {
+      toast.error(`You can upload up to ${MAX_IMAGES} images per property.`)
+      return
+    }
+
+    const imagesToAdd = selectedImages.slice(0, availableSlots).map((file) => ({
+      id: crypto.randomUUID(),
+      file,
+      previewUrl: URL.createObjectURL(file),
+    }))
+
+    if (selectedImages.length > availableSlots) {
+      toast.error(`Only ${availableSlots} more image(s) can be added.`)
+    }
+
+    setPendingImages((prev) => [...prev, ...imagesToAdd])
+  }
+
+  const handleImageFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files || [])
+    addImageFiles(files)
+    event.target.value = ''
   }
 
   const handleRemoveImage = (url: string) => {
     setImageUrls(imageUrls.filter((u) => u !== url))
+  }
+
+  const handleRemovePendingImage = (previewUrl: string) => {
+    setPendingImages((prev) => {
+      const imageToRemove = prev.find((image) => image.previewUrl === previewUrl)
+      if (imageToRemove) {
+        URL.revokeObjectURL(imageToRemove.previewUrl)
+      }
+      return prev.filter((image) => image.previewUrl !== previewUrl)
+    })
+    setImageUploadProgress((prev) => {
+      const next = { ...prev }
+      const target = pendingImages.find((image) => image.previewUrl === previewUrl)
+      if (target) {
+        delete next[target.id]
+      }
+      return next
+    })
+  }
+
+  const setVideoFile = (file: File | null) => {
+    if (!canManageMedia) {
+      toast.error('Only paid or free-trial creator accounts can upload property videos.')
+      return
+    }
+    if (!file) return
+
+    if (!file.type.startsWith('video/')) {
+      toast.error('Please select a valid video file.')
+      return
+    }
+
+    if (file.size > MAX_VIDEO_SIZE_BYTES) {
+      toast.error('Video file size must be 250 MB or less.')
+      return
+    }
+
+    if (pendingVideo) {
+      URL.revokeObjectURL(pendingVideo.previewUrl)
+    }
+
+    setPendingVideo({
+      id: crypto.randomUUID(),
+      file,
+      previewUrl: URL.createObjectURL(file),
+    })
+    setVideoUploadProgress(0)
+    setFormData((prev) => ({ ...prev, video_url: '' }))
+  }
+
+  const handleVideoFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0] || null
+    setVideoFile(file)
+    event.target.value = ''
+  }
+
+  const handleRemoveVideo = () => {
+    if (pendingVideo) {
+      URL.revokeObjectURL(pendingVideo.previewUrl)
+    }
+    setPendingVideo(null)
+    setVideoUploadProgress(0)
+    setFormData((prev) => ({ ...prev, video_url: '' }))
+  }
+
+  const uploadMediaFiles = async (userId: string) => {
+    const supabase = createClient()
+
+    setIsUploadingMedia(true)
+    setImageUploadProgress({})
+    setVideoUploadProgress(0)
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
+
+      if (!session?.access_token) {
+        throw new Error('Not authenticated')
+      }
+
+      const uploadedImageUrls: string[] = []
+
+      for (const image of pendingImages) {
+        const storagePath = buildStoragePath(userId, image.file, 'listings')
+        await uploadFileWithProgress(
+          image.file,
+          PROPERTY_IMAGES_BUCKET,
+          storagePath,
+          session.access_token,
+          (progress) => {
+            setImageUploadProgress((prev) => ({ ...prev, [image.id]: progress }))
+          },
+        )
+
+        const { data } = supabase.storage.from(PROPERTY_IMAGES_BUCKET).getPublicUrl(storagePath)
+        uploadedImageUrls.push(data.publicUrl)
+      }
+
+      let uploadedVideoUrl = formData.video_url || null
+      if (pendingVideo) {
+        const storagePath = buildStoragePath(userId, pendingVideo.file, 'tours')
+        await uploadFileWithProgress(
+          pendingVideo.file,
+          PROPERTY_VIDEOS_BUCKET,
+          storagePath,
+          session.access_token,
+          setVideoUploadProgress,
+        )
+
+        const { data } = supabase.storage.from(PROPERTY_VIDEOS_BUCKET).getPublicUrl(storagePath)
+        uploadedVideoUrl = data.publicUrl
+      }
+
+      return {
+        uploadedImageUrls,
+        uploadedVideoUrl,
+      }
+    } finally {
+      setIsUploadingMedia(false)
+    }
+  }
+
+  const handleImageDrop = (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault()
+    setIsDraggingImages(false)
+    addImageFiles(Array.from(event.dataTransfer.files || []))
+  }
+
+  const handleVideoDrop = (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault()
+    setIsDraggingVideo(false)
+    setVideoFile(event.dataTransfer.files?.[0] || null)
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -121,6 +323,10 @@ export function PropertyForm({ cities, property }: PropertyFormProps) {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) throw new Error('Not authenticated')
 
+      if (!canManageMedia && (pendingImages.length > 0 || pendingVideo)) {
+        throw new Error('Media uploads are available only for active paid or trial creator accounts.')
+      }
+
       // Get agent
       const { data: agent } = await supabase
         .from('agents')
@@ -130,8 +336,12 @@ export function PropertyForm({ cities, property }: PropertyFormProps) {
 
       if (!agent) throw new Error('Agent not found')
 
+      const { uploadedImageUrls, uploadedVideoUrl } = await uploadMediaFiles(user.id)
+
       const price = parseFloat(formData.price)
       const areaSqft = parseFloat(formData.area_sqft) || null
+      const latitude = formData.latitude ? parseFloat(formData.latitude) : null
+      const longitude = formData.longitude ? parseFloat(formData.longitude) : null
 
       const propertyData = {
         title: formData.title,
@@ -145,6 +355,8 @@ export function PropertyForm({ cities, property }: PropertyFormProps) {
         locality: formData.locality,
         address: formData.address || null,
         landmark: formData.landmark || null,
+        latitude: Number.isFinite(latitude) ? latitude : null,
+        longitude: Number.isFinite(longitude) ? longitude : null,
         bedrooms: parseInt(formData.bedrooms) || null,
         bathrooms: parseInt(formData.bathrooms) || null,
         area_sqft: areaSqft,
@@ -153,8 +365,9 @@ export function PropertyForm({ cities, property }: PropertyFormProps) {
         furnishing: formData.furnishing || null,
         facing: formData.facing || null,
         age_of_property: formData.age_of_property || null,
+        video_url: uploadedVideoUrl,
         amenities: formData.amenities,
-        images: imageUrls,
+        images: [...imageUrls, ...uploadedImageUrls],
         is_active: formData.is_active,
         agent_id: agent.id,
       }
@@ -168,25 +381,58 @@ export function PropertyForm({ cities, property }: PropertyFormProps) {
         if (error) throw error
         toast.success('Property updated successfully')
       } else {
-        const { error } = await supabase
+        const { data: createdProperty, error } = await supabase
           .from('properties')
           .insert({
             ...propertyData,
-            status: 'available',
+            status: 'pending',
             view_count: 0,
             is_verified: false,
             is_featured: false,
           })
+          .select('id')
+          .single()
 
         if (error) throw error
-        toast.success('Property listed successfully')
+
+        if (createdProperty?.id) {
+          const { error: verificationError } = await supabase
+            .from('property_verifications')
+            .insert({
+              property_id: createdProperty.id,
+              agent_id: agent.id,
+              status: 'pending',
+            })
+
+          if (verificationError) {
+            console.warn('Property verification workflow setup failed:', verificationError)
+          }
+        }
+
+        toast.success('Property submitted for verification')
       }
+
+      pendingImages.forEach((image) => URL.revokeObjectURL(image.previewUrl))
+      if (pendingVideo) {
+        URL.revokeObjectURL(pendingVideo.previewUrl)
+      }
+      setPendingImages([])
+      setPendingVideo(null)
 
       router.push('/agent/properties')
       router.refresh()
     } catch (error) {
       console.error('Error saving property:', error)
-      toast.error('Failed to save property. Please try again.')
+      const errorMessage = error instanceof Error ? error.message.toLowerCase() : ''
+      const message =
+        errorMessage.includes('bucket') ||
+        errorMessage.includes('storage') ||
+        errorMessage.includes('row-level security')
+          ? 'Media storage is not ready yet. Run the new storage SQL script in Supabase first.'
+          : errorMessage.includes('creator accounts')
+            ? 'Only paid or free-trial creator accounts can upload property media.'
+          : 'Failed to save property. Please try again.'
+      toast.error(message)
     } finally {
       setIsSubmitting(false)
     }
@@ -230,7 +476,9 @@ export function PropertyForm({ cities, property }: PropertyFormProps) {
               <Label htmlFor="property_type">Property Type *</Label>
               <Select
                 value={formData.property_type}
-                onValueChange={(value) => setFormData({ ...formData, property_type: value })}
+                onValueChange={(value) =>
+                  setFormData({ ...formData, property_type: value as Property['property_type'] })
+                }
               >
                 <SelectTrigger className="mt-1.5">
                   <SelectValue placeholder="Select type" />
@@ -249,7 +497,9 @@ export function PropertyForm({ cities, property }: PropertyFormProps) {
               <Label htmlFor="listing_type">Listing Type *</Label>
               <Select
                 value={formData.listing_type}
-                onValueChange={(value) => setFormData({ ...formData, listing_type: value })}
+                onValueChange={(value) =>
+                  setFormData({ ...formData, listing_type: value as Property['listing_type'] })
+                }
               >
                 <SelectTrigger className="mt-1.5">
                   <SelectValue placeholder="Select type" />
@@ -344,6 +594,38 @@ export function PropertyForm({ cities, property }: PropertyFormProps) {
               className="mt-1.5"
             />
           </div>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <div>
+              <Label htmlFor="latitude">Latitude</Label>
+              <Input
+                id="latitude"
+                type="number"
+                step="any"
+                value={formData.latitude}
+                onChange={(e) => setFormData({ ...formData, latitude: e.target.value })}
+                placeholder="e.g., 12.9716"
+                className="mt-1.5"
+              />
+            </div>
+
+            <div>
+              <Label htmlFor="longitude">Longitude</Label>
+              <Input
+                id="longitude"
+                type="number"
+                step="any"
+                value={formData.longitude}
+                onChange={(e) => setFormData({ ...formData, longitude: e.target.value })}
+                placeholder="e.g., 77.5946"
+                className="mt-1.5"
+              />
+            </div>
+          </div>
+
+          <p className="text-xs text-muted-foreground">
+            Add map coordinates so your listing appears in location-based browsing.
+          </p>
         </CardContent>
       </Card>
 
@@ -439,7 +721,9 @@ export function PropertyForm({ cities, property }: PropertyFormProps) {
               <Label htmlFor="furnishing">Furnishing</Label>
               <Select
                 value={formData.furnishing}
-                onValueChange={(value) => setFormData({ ...formData, furnishing: value })}
+                onValueChange={(value) =>
+                  setFormData({ ...formData, furnishing: value as NonNullable<Property['furnishing']> })
+                }
               >
                 <SelectTrigger className="mt-1.5">
                   <SelectValue placeholder="Select furnishing" />
@@ -504,22 +788,49 @@ export function PropertyForm({ cities, property }: PropertyFormProps) {
       <Card>
         <CardHeader>
           <CardTitle>Images</CardTitle>
-          <CardDescription>Add image URLs for your property</CardDescription>
+          <CardDescription>Upload property photos directly from your device</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="flex gap-2">
+          <div
+            onDragOver={(event) => {
+              event.preventDefault()
+              setIsDraggingImages(true)
+            }}
+            onDragLeave={(event) => {
+              event.preventDefault()
+              setIsDraggingImages(false)
+            }}
+            onDrop={handleImageDrop}
+            className={`rounded-xl border border-dashed p-4 transition-colors ${
+              isDraggingImages
+                ? 'border-primary bg-primary/10'
+                : 'border-border/80 bg-muted/20'
+            }`}
+          >
+            <Label htmlFor="property-images" className="flex cursor-pointer flex-col items-center justify-center gap-2 text-center">
+              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-background shadow-sm">
+                <ImagePlus className="h-6 w-6 text-primary" />
+              </div>
+              <div>
+                <p className="font-medium text-foreground">Drag and drop property images here</p>
+                <p className="text-sm text-muted-foreground">
+                  Or click to browse. Upload up to {MAX_IMAGES} images, 20 MB each.
+                </p>
+              </div>
+            </Label>
             <Input
-              value={newImageUrl}
-              onChange={(e) => setNewImageUrl(e.target.value)}
-              placeholder="Enter image URL"
-              className="flex-1"
+              id="property-images"
+              type="file"
+              accept="image/*"
+              multiple
+              onChange={handleImageFileChange}
+              className="mt-4"
+              disabled={!canManageMedia}
             />
-            <Button type="button" onClick={handleAddImage} variant="outline">
-              <Plus className="h-4 w-4" />
-            </Button>
           </div>
+          <p className="text-sm text-muted-foreground">{mediaAccessLabel}</p>
 
-          {imageUrls.length > 0 && (
+          {(imageUrls.length > 0 || pendingImages.length > 0) && (
             <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
               {imageUrls.map((url, index) => (
                 <div key={index} className="group relative aspect-square overflow-hidden rounded-lg bg-muted">
@@ -537,6 +848,116 @@ export function PropertyForm({ cities, property }: PropertyFormProps) {
                   </button>
                 </div>
               ))}
+              {pendingImages.map((image, index) => (
+                <div
+                  key={image.previewUrl}
+                  className="group relative aspect-square overflow-hidden rounded-lg border border-dashed border-primary/40 bg-muted"
+                >
+                  <img
+                    src={image.previewUrl}
+                    alt={`New property image ${index + 1}`}
+                    className="h-full w-full object-cover"
+                  />
+                  <div className="absolute left-2 top-2 rounded-full bg-primary/85 px-2 py-1 text-[11px] font-medium text-primary-foreground">
+                    New
+                  </div>
+                  {isUploadingMedia && (
+                    <div className="absolute inset-x-2 bottom-2 rounded-md bg-background/95 p-2 shadow-sm">
+                      <div className="mb-1 flex items-center justify-between text-[11px] text-muted-foreground">
+                        <span className="truncate pr-2">{image.file.name}</span>
+                        <span>{imageUploadProgress[image.id] ?? 0}%</span>
+                      </div>
+                      <Progress value={imageUploadProgress[image.id] ?? 0} />
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => handleRemovePendingImage(image.previewUrl)}
+                    className="absolute right-2 top-2 rounded-full bg-black/50 p-1 text-white opacity-0 transition-opacity group-hover:opacity-100"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Video */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Video Tour</CardTitle>
+          <CardDescription>Upload a walkthrough video directly from your device</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div
+            onDragOver={(event) => {
+              event.preventDefault()
+              setIsDraggingVideo(true)
+            }}
+            onDragLeave={(event) => {
+              event.preventDefault()
+              setIsDraggingVideo(false)
+            }}
+            onDrop={handleVideoDrop}
+            className={`rounded-xl border border-dashed p-4 transition-colors ${
+              isDraggingVideo
+                ? 'border-primary bg-primary/10'
+                : 'border-border/80 bg-muted/20'
+            }`}
+          >
+            <Label htmlFor="property-video" className="flex cursor-pointer flex-col items-center justify-center gap-2 text-center">
+              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-background shadow-sm">
+                <Video className="h-6 w-6 text-primary" />
+              </div>
+              <div>
+                <p className="font-medium text-foreground">Drag and drop a video here</p>
+                <p className="text-sm text-muted-foreground">
+                  Or click to browse. Upload 1 video up to 250 MB.
+                </p>
+              </div>
+            </Label>
+            <Input
+              id="property-video"
+              type="file"
+              accept="video/*"
+              onChange={handleVideoFileChange}
+              className="mt-4"
+              disabled={!canManageMedia}
+            />
+          </div>
+          <p className="text-sm text-muted-foreground">{mediaAccessLabel}</p>
+
+          {(formData.video_url || pendingVideo) && (
+            <div className="space-y-3 rounded-lg border bg-card p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="font-medium text-foreground">Current video</p>
+                  <p className="text-sm text-muted-foreground">
+                    {pendingVideo ? pendingVideo.file.name : 'Saved video will remain attached to this property.'}
+                  </p>
+                </div>
+                <Button type="button" variant="outline" size="sm" onClick={handleRemoveVideo}>
+                  <X className="mr-2 h-4 w-4" />
+                  Remove video
+                </Button>
+              </div>
+
+              {pendingVideo ? (
+                <>
+                  <video src={pendingVideo.previewUrl} controls className="max-h-64 w-full rounded-lg bg-black" />
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between text-sm text-muted-foreground">
+                      <span>{pendingVideo.file.name}</span>
+                      <span>{isUploadingMedia ? `${videoUploadProgress}%` : formatFileSize(pendingVideo.file.size)}</span>
+                    </div>
+                    {isUploadingMedia ? <Progress value={videoUploadProgress} /> : null}
+                  </div>
+                </>
+              ) : formData.video_url ? (
+                <video src={formData.video_url} controls className="max-h-64 w-full rounded-lg bg-black" />
+              ) : null}
             </div>
           )}
         </CardContent>
@@ -562,11 +983,19 @@ export function PropertyForm({ cities, property }: PropertyFormProps) {
 
       {/* Submit */}
       <div className="flex gap-4">
-        <Button type="submit" size="lg" disabled={isSubmitting}>
+        <Button type="submit" size="lg" disabled={isSubmitting || isUploadingMedia}>
           {isSubmitting ? (
             <>
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              {isEditing ? 'Updating...' : 'Publishing...'}
+              {isUploadingMedia ? (
+                <Upload className="mr-2 h-4 w-4" />
+              ) : (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              )}
+              {isUploadingMedia
+                ? 'Uploading media...'
+                : isEditing
+                  ? 'Updating...'
+                  : 'Publishing...'}
             </>
           ) : isEditing ? (
             'Update Property'

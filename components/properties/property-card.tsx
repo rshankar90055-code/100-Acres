@@ -10,11 +10,11 @@ import {
   Bath, 
   Maximize, 
   BadgeCheck,
-  Heart,
-  Phone
+  Phone,
+  Share2
 } from 'lucide-react'
-import { useState, useEffect } from 'react'
-import { createClient } from '@/lib/supabase/client'
+import { ShareMenu } from '@/components/shared/share-menu'
+import { PropertySaveButton } from '@/components/properties/property-save-button'
 import { toast } from 'sonner'
 import type { Property } from '@/lib/types'
 
@@ -43,71 +43,6 @@ const propertyTypeLabels: Record<string, string> = {
 }
 
 export function PropertyCard({ property, showSaveButton = true, initialSaved = false }: PropertyCardProps) {
-  const [isSaved, setIsSaved] = useState(initialSaved)
-  const [isSaving, setIsSaving] = useState(false)
-  const [isChecked, setIsChecked] = useState(false)
-  const supabase = createClient()
-
-  // Check if property is saved on mount
-  useEffect(() => {
-    if (isChecked) return
-    
-    const checkSavedStatus = async () => {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) {
-        setIsChecked(true)
-        return
-      }
-
-      const { data } = await supabase
-        .from('saved_properties')
-        .select('id')
-        .eq('user_id', user.id)
-        .eq('property_id', property.id)
-        .single()
-
-      setIsSaved(!!data)
-      setIsChecked(true)
-    }
-
-    checkSavedStatus()
-  }, [property.id, supabase, isChecked])
-
-  const handleSave = async (e: React.MouseEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
-    
-    const { data: { user } } = await supabase.auth.getUser()
-    
-    if (!user) {
-      toast.error('Please sign in to save properties')
-      return
-    }
-
-    setIsSaving(true)
-    try {
-      if (isSaved) {
-        await supabase
-          .from('saved_properties')
-          .delete()
-          .eq('user_id', user.id)
-          .eq('property_id', property.id)
-        setIsSaved(false)
-        toast.success('Property removed from saved')
-      } else {
-        await supabase
-          .from('saved_properties')
-          .insert({ user_id: user.id, property_id: property.id })
-        setIsSaved(true)
-        toast.success('Property saved!')
-      }
-    } catch {
-      toast.error('Something went wrong')
-    } finally {
-      setIsSaving(false)
-    }
-  }
-
   const handleContact = (e: React.MouseEvent) => {
     e.preventDefault()
     e.stopPropagation()
@@ -163,16 +98,22 @@ export function PropertyCard({ property, showSaveButton = true, initialSaved = f
           {/* Action Buttons */}
           <div className="absolute right-3 top-3 flex gap-2">
             {showSaveButton && (
-              <button 
-                onClick={handleSave}
-                disabled={isSaving}
-                className={`flex h-9 w-9 items-center justify-center rounded-full bg-white/90 transition-colors hover:bg-white ${
-                  isSaved ? 'text-red-500' : 'text-muted-foreground hover:text-red-500'
-                }`}
-              >
-                <Heart className={`h-5 w-5 ${isSaved ? 'fill-current' : ''}`} />
-              </button>
+              <PropertySaveButton
+                propertyId={property.id}
+                initialSaved={initialSaved}
+                variant="outline"
+                size="icon"
+                showLabel={false}
+                className="h-9 w-9 rounded-full bg-white/95 shadow-sm hover:bg-white"
+              />
             )}
+            <ShareMenu
+              title={property.title}
+              text="Check out this property listing on 100acres."
+              url={typeof window !== 'undefined' ? `${window.location.origin}/properties/${property.slug}` : `/properties/${property.slug}`}
+              buttonVariant="outline"
+              buttonSize="icon"
+            />
           </div>
 
           {/* Price Overlay */}
@@ -237,15 +178,24 @@ export function PropertyCard({ property, showSaveButton = true, initialSaved = f
           </div>
 
           {/* Contact Button */}
-          <Button 
-            variant="outline" 
-            size="sm" 
-            className="w-full gap-2"
-            onClick={handleContact}
-          >
-            <Phone className="h-4 w-4" />
-            Contact Agent
-          </Button>
+          <div className="flex gap-2">
+            <Button 
+              variant="outline" 
+              size="sm" 
+              className="flex-1 gap-2"
+              onClick={handleContact}
+            >
+              <Phone className="h-4 w-4" />
+              Contact Agent
+            </Button>
+            <ShareMenu
+              title={property.title}
+              text="Check out this property listing on 100acres."
+              url={typeof window !== 'undefined' ? `${window.location.origin}/properties/${property.slug}` : `/properties/${property.slug}`}
+              buttonVariant="outline"
+              buttonSize="icon"
+            />
+          </div>
         </CardContent>
       </Card>
     </Link>

@@ -5,6 +5,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
+import { LocalityAlertManager } from '@/components/dashboard/locality-alert-manager'
+import { formatPhoneForDisplay } from '@/lib/phone'
 import { 
   Heart, 
   Eye, 
@@ -12,7 +14,10 @@ import {
   Settings, 
   ArrowRight,
   Building2,
-  UserPlus
+  UserPlus,
+  MessageCircle,
+  Bookmark,
+  Store
 } from 'lucide-react'
 
 export default async function UserDashboard() {
@@ -44,16 +49,35 @@ export default async function UserDashboard() {
     .select('*', { count: 'exact', head: true })
     .eq('user_id', user.id)
 
-  // Fetch user's enquiries
-  const { data: enquiries, count: enquiryCount } = await supabase
-    .from('leads')
-    .select(`
-      *,
-      property:properties(title, slug, images)
-    `, { count: 'exact' })
-    .eq('user_id', user.id)
-    .order('created_at', { ascending: false })
-    .limit(5)
+  // Fetch user's enquiries and marketplace conversations
+  const [
+    { data: enquiries, count: enquiryCount },
+    { data: marketChats, count: marketChatCount },
+    { count: savedMarketplaceCount },
+  ] = await Promise.all([
+    supabase
+      .from('leads')
+      .select(`
+        *,
+        property:properties(title, slug, images)
+      `, { count: 'exact' })
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false })
+      .limit(5),
+    supabase
+      .from('marketplace_inquiries')
+      .select(`
+        *,
+        listing:marketplace_listings(title, slug, images)
+      `, { count: 'exact' })
+      .eq('buyer_user_id', user.id)
+      .order('updated_at', { ascending: false })
+      .limit(5),
+    supabase
+      .from('saved_marketplace_listings')
+      .select('*', { count: 'exact', head: true })
+      .eq('user_id', user.id),
+  ])
 
   // Fetch recent property views
   const { data: recentViews } = await supabase
@@ -80,6 +104,13 @@ export default async function UserDashboard() {
     return price.toLocaleString()
   }
 
+  const unreadMarketplaceCount =
+    marketChats?.filter((chat) => {
+      if (!chat.last_message_at) return false
+      if (!chat.buyer_last_read_at) return true
+      return new Date(chat.last_message_at).getTime() > new Date(chat.buyer_last_read_at).getTime()
+    }).length || 0
+
   return (
     <div className="container mx-auto px-4 py-8">
       {/* Welcome Section */}
@@ -94,7 +125,9 @@ export default async function UserDashboard() {
             <h1 className="text-2xl font-bold text-foreground">
               Welcome back, {profile?.full_name || 'User'}!
             </h1>
-            <p className="text-muted-foreground">{user.email}</p>
+            <p className="text-muted-foreground">
+              {profile?.phone ? formatPhoneForDisplay(profile.phone) : 'Phone account'}
+            </p>
           </div>
         </div>
         <div className="flex gap-3">
@@ -114,7 +147,7 @@ export default async function UserDashboard() {
       </div>
 
       {/* Stats Cards */}
-      <div className="mb-8 grid gap-4 md:grid-cols-3">
+      <div className="mb-8 grid gap-4 md:grid-cols-4">
         <Card>
           <CardContent className="flex items-center gap-4 p-6">
             <div className="flex h-12 w-12 items-center justify-center rounded-full bg-red-100 text-red-600">
@@ -141,6 +174,18 @@ export default async function UserDashboard() {
 
         <Card>
           <CardContent className="flex items-center gap-4 p-6">
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-violet-100 text-violet-600">
+              <MessageCircle className="h-6 w-6" />
+            </div>
+            <div>
+              <p className="text-2xl font-bold">{marketChatCount || 0}</p>
+              <p className="text-sm text-muted-foreground">Market Chats</p>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="flex items-center gap-4 p-6">
             <div className="flex h-12 w-12 items-center justify-center rounded-full bg-green-100 text-green-600">
               <Eye className="h-6 w-6" />
             </div>
@@ -152,7 +197,52 @@ export default async function UserDashboard() {
         </Card>
       </div>
 
-      <div className="grid gap-8 lg:grid-cols-2">
+      <div className="mb-8 grid gap-4 md:grid-cols-3">
+        <Link href="/marketplace-inquiries">
+          <Card className="h-full border-primary/20 transition-colors hover:border-primary/50">
+            <CardContent className="flex items-center justify-between p-6">
+              <div>
+                <p className="text-sm font-medium text-muted-foreground">Marketplace Inbox</p>
+                <p className="mt-1 text-xl font-bold">{unreadMarketplaceCount} unread</p>
+                <p className="text-sm text-muted-foreground">Buyer-seller chats in one place</p>
+              </div>
+              <div className="rounded-2xl bg-primary/10 p-3 text-primary">
+                <MessageCircle className="h-6 w-6" />
+              </div>
+            </CardContent>
+          </Card>
+        </Link>
+        <Link href="/saved?tab=marketplace">
+          <Card className="h-full border-border transition-colors hover:border-primary/40">
+            <CardContent className="flex items-center justify-between p-6">
+              <div>
+                <p className="text-sm font-medium text-muted-foreground">Saved Marketplace</p>
+                <p className="mt-1 text-xl font-bold">{savedMarketplaceCount || 0}</p>
+                <p className="text-sm text-muted-foreground">Cars, bikes, gadgets, and more</p>
+              </div>
+              <div className="rounded-2xl bg-amber-100 p-3 text-amber-700">
+                <Bookmark className="h-6 w-6" />
+              </div>
+            </CardContent>
+          </Card>
+        </Link>
+        <Link href="/marketplace">
+          <Card className="h-full border-border transition-colors hover:border-primary/40">
+            <CardContent className="flex items-center justify-between p-6">
+              <div>
+                <p className="text-sm font-medium text-muted-foreground">Explore Marketplace</p>
+                <p className="mt-1 text-xl font-bold">Buy, sell, chat</p>
+                <p className="text-sm text-muted-foreground">Browse local videos and listings faster</p>
+              </div>
+              <div className="rounded-2xl bg-emerald-100 p-3 text-emerald-700">
+                <Store className="h-6 w-6" />
+              </div>
+            </CardContent>
+          </Card>
+        </Link>
+      </div>
+
+      <div className="grid gap-8 lg:grid-cols-3">
         {/* Recent Enquiries */}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
@@ -224,6 +314,59 @@ export default async function UserDashboard() {
           </CardContent>
         </Card>
 
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between">
+            <CardTitle>Marketplace Chats</CardTitle>
+            <Link href="/marketplace-inquiries">
+              <Button variant="ghost" size="sm" className="gap-1">
+                View all
+                <ArrowRight className="h-4 w-4" />
+              </Button>
+            </Link>
+          </CardHeader>
+          <CardContent>
+            {marketChats && marketChats.length > 0 ? (
+              <div className="space-y-4">
+                {marketChats.map((chat) => (
+                  <div key={chat.id} className="flex items-center gap-4 rounded-lg border border-border p-4">
+                    <div className="h-16 w-16 flex-shrink-0 overflow-hidden rounded-lg bg-muted">
+                      {chat.listing?.images?.[0] ? (
+                        <img src={chat.listing.images[0]} alt={chat.listing.title} className="h-full w-full object-cover" />
+                      ) : (
+                        <div className="flex h-full w-full items-center justify-center">
+                          <MessageCircle className="h-6 w-6 text-muted-foreground" />
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex-1">
+                      <Link href={`/marketplace-inquiries/${chat.id}`} className="font-medium text-foreground hover:text-primary">
+                        {chat.listing?.title || 'Marketplace listing'}
+                      </Link>
+                      <p className="text-sm text-muted-foreground">
+                        {new Date(chat.updated_at).toLocaleDateString()}
+                      </p>
+                    </div>
+                    {!chat.buyer_last_read_at ||
+                    new Date(chat.last_message_at).getTime() > new Date(chat.buyer_last_read_at).getTime() ? (
+                      <Badge>Unread</Badge>
+                    ) : (
+                      <Badge variant="secondary">{chat.status}</Badge>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="py-8 text-center">
+                <MessageCircle className="mx-auto mb-2 h-12 w-12 text-muted-foreground/50" />
+                <p className="text-muted-foreground">No marketplace chats yet</p>
+                <Link href="/marketplace">
+                  <Button variant="link">Browse marketplace</Button>
+                </Link>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
         {/* Saved Properties Quick Access */}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
@@ -256,6 +399,10 @@ export default async function UserDashboard() {
             )}
           </CardContent>
         </Card>
+      </div>
+
+      <div className="mt-8">
+        <LocalityAlertManager />
       </div>
     </div>
   )

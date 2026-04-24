@@ -2,17 +2,68 @@ import type { Metadata } from 'next'
 import { Geist, Geist_Mono } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
 import { Toaster } from '@/components/ui/sonner'
+import { MobileBottomNav } from '@/components/layout/mobile-bottom-nav'
 import { LanguageProvider } from '@/lib/language-context'
+import { siteConfig, toAbsoluteUrl } from '@/lib/site-config'
 import './globals.css'
 
-const _geist = Geist({ subsets: ["latin"] });
-const _geistMono = Geist_Mono({ subsets: ["latin"] });
+const geistSans = Geist({
+  subsets: ['latin'],
+  variable: '--font-geist-sans',
+})
+
+const geistMono = Geist_Mono({
+  subsets: ['latin'],
+  variable: '--font-geist-mono',
+})
 
 export const metadata: Metadata = {
-  title: '100acres - Find Your Dream Home in Karnataka',
-  description: 'Discover properties in Tier-2 and Tier-3 cities of Karnataka. Buy, sell, or rent apartments, houses, villas, and plots with trusted local agents.',
-  keywords: ['real estate', 'Karnataka', 'property', 'Mysuru', 'Mangaluru', 'Hubli', 'buy home', 'rent apartment'],
-  authors: [{ name: '100acres' }],
+  metadataBase: new URL(siteConfig.siteUrl),
+  applicationName: siteConfig.name,
+  title: siteConfig.title,
+  description: siteConfig.description,
+  keywords: siteConfig.keywords,
+  authors: [{ name: siteConfig.name, url: siteConfig.siteUrl }],
+  verification: {
+    google: process.env.GOOGLE_SITE_VERIFICATION || undefined,
+  },
+  alternates: {
+    canonical: '/',
+  },
+  openGraph: {
+    type: 'website',
+    locale: 'en_IN',
+    url: '/',
+    siteName: siteConfig.name,
+    title: siteConfig.title,
+    description: siteConfig.description,
+    images: [
+      {
+        url: toAbsoluteUrl('/placeholder-logo.png'),
+        width: 1200,
+        height: 630,
+        alt: `${siteConfig.name} logo`,
+      },
+    ],
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: siteConfig.title,
+    description: siteConfig.description,
+    images: [toAbsoluteUrl('/placeholder-logo.png')],
+  },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      'max-image-preview': 'large',
+      'max-snippet': -1,
+      'max-video-preview': -1,
+    },
+  },
+  manifest: '/manifest.webmanifest',
   icons: {
     icon: [
       {
@@ -38,10 +89,14 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en" className="bg-background">
-      <body className="font-sans antialiased">
+    <html
+      lang="en"
+      className={`${geistSans.variable} ${geistMono.variable} bg-background`}
+    >
+      <body className="pb-16 font-sans antialiased md:pb-0">
         <LanguageProvider>
           {children}
+          <MobileBottomNav />
           <Toaster richColors position="top-right" />
         </LanguageProvider>
         {process.env.NODE_ENV === 'production' && <Analytics />}

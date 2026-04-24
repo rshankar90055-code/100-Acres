@@ -5,20 +5,23 @@ import { Footer } from '@/components/layout/footer'
 import { PropertyGallery } from '@/components/properties/property-gallery'
 import { PropertyDetails } from '@/components/properties/property-details'
 import { PropertyAmenities } from '@/components/properties/property-amenities'
+import { PropertyActionBar } from '@/components/properties/property-action-bar'
 import { AgentCard } from '@/components/properties/agent-card'
 import { LeadForm } from '@/components/properties/lead-form'
 import { AreaInsights } from '@/components/properties/area-insights'
 import { SimilarProperties } from '@/components/properties/similar-properties'
 import { Badge } from '@/components/ui/badge'
-import { 
-  MapPin, 
-  BadgeCheck, 
-  Eye,
-  Share2,
-  Heart
-} from 'lucide-react'
-import { Button } from '@/components/ui/button'
+import { MapPin, BadgeCheck, Eye } from 'lucide-react'
 import type { Metadata } from 'next'
+import {
+  getDemoAreaInsight,
+  getDemoPropertyBySlug,
+  getSimilarDemoProperties,
+  hasSupabaseEnv,
+} from '@/lib/site-data'
+import { toAbsoluteUrl } from '@/lib/site-config'
+import type { AreaInsight, Property } from '@/lib/types'
+import { hasCreatorAccess } from '@/lib/access'
 
 interface PageProps {
   params: Promise<{ slug: string }>
@@ -26,24 +29,68 @@ interface PageProps {
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { slug } = await params
-  const supabase = await createClient()
-  
-  const { data: property } = await supabase
-    .from('properties')
-    .select('title, description, locality, city:cities(name)')
-    .eq('slug', slug)
-    .single()
+  const canonicalPath = `/properties/${slug}`
+  const fallbackImage = toAbsoluteUrl('/placeholder-logo.png')
 
-  if (!property) {
+  if (!hasSupabaseEnv) {
+    const property = getDemoPropertyBySlug(slug)
+    if (!property) return { title: 'Property Not Found | 100acres' }
+
+    return {
+      title: `${property.title} | 100acres`,
+      description:
+        property.description ||
+        `${property.title} in ${property.locality}, ${property.city?.name}`,
+      alternates: {
+        canonical: canonicalPath,
+      },
+      openGraph: {
+        title: `${property.title} | 100acres`,
+        description:
+          property.description ||
+          `${property.title} in ${property.locality}, ${property.city?.name}`,
+        url: canonicalPath,
+        images: property.images?.length ? [property.images[0]] : [fallbackImage],
+      },
+    }
+  }
+
+  try {
+    const supabase = await createClient()
+    const { data: property } = await supabase
+      .from('properties')
+      .select('title, description, locality, images, city:cities(name)')
+      .eq('slug', slug)
+      .eq('is_verified', true)
+      .eq('status', 'available')
+      .single()
+
+    if (!property) return { title: 'Property Not Found | 100acres' }
+
+    const city = Array.isArray(property.city) ? property.city[0] : property.city
+    const ogImage = Array.isArray(property.images) && property.images.length ? property.images[0] : fallbackImage
+
+    return {
+      title: `${property.title} | 100acres`,
+      description:
+        property.description ||
+        `${property.title} in ${property.locality}, ${city?.name}`,
+      alternates: {
+        canonical: canonicalPath,
+      },
+      openGraph: {
+        title: `${property.title} | 100acres`,
+        description:
+          property.description ||
+          `${property.title} in ${property.locality}, ${city?.name}`,
+        url: canonicalPath,
+        images: [ogImage],
+      },
+    }
+  } catch {
     return { title: 'Property Not Found | 100acres' }
   }
-
-  return {
-    title: `${property.title} | 100acres`,
-    description: property.description || `${property.title} in ${property.locality}, ${property.city?.name}`,
-  }
 }
-
 function formatPrice(price: number): string {
   if (price >= 10000000) {
     return `${(price / 10000000).toFixed(2)} Cr`
@@ -53,11 +100,9 @@ function formatPrice(price: number): string {
   return price.toLocaleString()
 }
 
-export default async function PropertyDetailPage({ params }: PageProps) {
-  const { slug } = await params
+async function getLiveProperty(slug: string) {
   const supabase = await createClient()
 
-  // Fetch property with related data
   const { data: property, error } = await supabase
     .from('properties')
     .select(`
@@ -66,41 +111,56 @@ export default async function PropertyDetailPage({ params }: PageProps) {
       agent:agents(*, profile:profiles(*))
     `)
     .eq('slug', slug)
+    .eq('is_verified', true)
+    .eq('status', 'available')
     .single()
 
-  if (error || !property) {
-    notFound()
-  }
+  if (error || !property) return null
 
-  // Increment view count
-  await supabase
+  void supabase
     .from('properties')
     .update({ view_count: property.view_count + 1 })
     .eq('id', property.id)
 
-  // Fetch area insights if available
-  const { data: areaInsights } = await supabase
-    .from('area_insights')
-    .select('*')
-    .eq('city_id', property.city_id)
-    .eq('locality', property.locality)
-    .single()
+  const [{ data: areaInsights }, { data: similarProperties }] = await Promise.all([
+    supabase
+      .from('area_insights')
+      .select('*')
+      .eq('city_id', property.city_id)
+      .eq('locality', property.locality)
+      .single(),
+    supabase
+      .from('properties')
+      .select(`
+        *,
+        city:cities(*),
+        agent:agents(*, profile:profiles(*))
+      `)
+      .eq('city_id', property.city_id)
+      .eq('property_type', property.property_type)
+      .eq('is_active', true)
+      .eq('is_verified', true)
+      .eq('status', 'available')
+      .neq('id', property.id)
+      .limit(4),
+  ])
 
-  // Fetch similar properties
-  const { data: similarProperties } = await supabase
-    .from('properties')
-    .select(`
-      *,
-      city:cities(*),
-      agent:agents(*, profile:profiles(*))
-    `)
-    .eq('city_id', property.city_id)
-    .eq('property_type', property.property_type)
-    .eq('is_active', true)
-    .eq('status', 'available')
-    .neq('id', property.id)
-    .limit(4)
+  return {
+    property: property as Property,
+    areaInsights: (areaInsights as AreaInsight | null) || null,
+    similarProperties: (similarProperties as Property[]) || [],
+  }
+}
 
+function PropertyPageContent({
+  property,
+  areaInsights,
+  similarProperties,
+}: {
+  property: Property
+  areaInsights: AreaInsight | null
+  similarProperties: Property[]
+}) {
   const propertyTypeLabels: Record<string, string> = {
     apartment: 'Apartment',
     house: 'House',
@@ -114,7 +174,6 @@ export default async function PropertyDetailPage({ params }: PageProps) {
     <div className="min-h-screen bg-background">
       <Header />
       <main className="container mx-auto px-4 py-8">
-        {/* Breadcrumb */}
         <nav className="mb-6 text-sm text-muted-foreground">
           <ol className="flex items-center gap-2">
             <li><a href="/" className="hover:text-primary">Home</a></li>
@@ -136,18 +195,14 @@ export default async function PropertyDetailPage({ params }: PageProps) {
         </nav>
 
         <div className="grid gap-8 lg:grid-cols-3">
-          {/* Main Content */}
           <div className="lg:col-span-2">
-            {/* Gallery */}
-            <PropertyGallery 
-              images={property.images || []} 
-              title={property.title} 
+            <PropertyGallery
+              images={property.images || []}
+              title={property.title}
               videoUrl={property.video_url}
             />
 
-            {/* Header */}
             <div className="mb-6 mt-6">
-              {/* Badges */}
               <div className="mb-4 flex flex-wrap items-center gap-2">
                 <Badge className="bg-primary text-primary-foreground">
                   {property.listing_type === 'sale' ? 'For Sale' : 'For Rent'}
@@ -166,19 +221,12 @@ export default async function PropertyDetailPage({ params }: PageProps) {
                     Featured
                   </Badge>
                 )}
-                {property.status !== 'available' && (
-                  <Badge variant="destructive">
-                    {property.status === 'sold' ? 'Sold' : property.status === 'rented' ? 'Rented' : 'Pending'}
-                  </Badge>
-                )}
               </div>
 
-              {/* Title */}
               <h1 className="mb-2 text-2xl font-bold text-foreground md:text-3xl">
                 {property.title}
               </h1>
 
-              {/* Location */}
               <div className="mb-4 flex items-center gap-1 text-muted-foreground">
                 <MapPin className="h-5 w-5 shrink-0" />
                 <span>
@@ -188,7 +236,6 @@ export default async function PropertyDetailPage({ params }: PageProps) {
                 </span>
               </div>
 
-              {/* Price */}
               <div className="mb-4">
                 <div className="text-3xl font-bold text-primary">
                   Rs. {formatPrice(property.price)}
@@ -203,16 +250,12 @@ export default async function PropertyDetailPage({ params }: PageProps) {
                 )}
               </div>
 
-              {/* Action Buttons */}
               <div className="flex flex-wrap items-center gap-3">
-                <Button variant="outline" size="sm" className="gap-2">
-                  <Heart className="h-4 w-4" />
-                  Save
-                </Button>
-                <Button variant="outline" size="sm" className="gap-2">
-                  <Share2 className="h-4 w-4" />
-                  Share
-                </Button>
+                <PropertyActionBar
+                  propertyId={property.id}
+                  propertySlug={property.slug}
+                  propertyTitle={property.title}
+                />
                 <div className="flex items-center gap-1 text-sm text-muted-foreground">
                   <Eye className="h-4 w-4" />
                   {property.view_count} views
@@ -220,10 +263,8 @@ export default async function PropertyDetailPage({ params }: PageProps) {
               </div>
             </div>
 
-            {/* Property Details */}
             <PropertyDetails property={property} />
 
-            {/* Description */}
             {property.description && (
               <div className="mb-8">
                 <h2 className="mb-4 text-xl font-semibold text-foreground">
@@ -235,26 +276,26 @@ export default async function PropertyDetailPage({ params }: PageProps) {
               </div>
             )}
 
-            {/* Amenities */}
             {property.amenities && property.amenities.length > 0 && (
               <PropertyAmenities amenities={property.amenities} />
             )}
 
-            {/* Area Insights */}
             {areaInsights && <AreaInsights insights={areaInsights} />}
           </div>
 
-          {/* Sidebar */}
           <div className="lg:col-span-1">
             <div className="sticky top-24 space-y-6">
-              {/* Agent Card */}
               {property.agent && (
-                <AgentCard agent={property.agent} propertyId={property.id} showReviews />
+                <AgentCard
+                  agent={property.agent}
+                  propertyId={property.id}
+                  showReviews
+                  showContactActions={hasCreatorAccess(property.agent, property.agent.profile)}
+                />
               )}
 
-              {/* Lead Form */}
-              <LeadForm 
-                propertyId={property.id} 
+              <LeadForm
+                propertyId={property.id}
                 agentId={property.agent_id}
                 propertyTitle={property.title}
               />
@@ -262,12 +303,46 @@ export default async function PropertyDetailPage({ params }: PageProps) {
           </div>
         </div>
 
-        {/* Similar Properties */}
-        {similarProperties && similarProperties.length > 0 && (
+        {similarProperties.length > 0 && (
           <SimilarProperties properties={similarProperties} />
         )}
       </main>
       <Footer />
     </div>
   )
+}
+
+export default async function PropertyDetailPage({ params }: PageProps) {
+  const { slug } = await params
+
+  if (!hasSupabaseEnv) {
+    const property = getDemoPropertyBySlug(slug)
+    if (!property) notFound()
+
+    return (
+      <PropertyPageContent
+        property={{ ...property, view_count: property.view_count + 1 }}
+        areaInsights={getDemoAreaInsight(property.city_id || '', property.locality)}
+        similarProperties={getSimilarDemoProperties(property)}
+      />
+    )
+  }
+
+  try {
+    const liveData = await getLiveProperty(slug)
+    if (!liveData) notFound()
+
+    return <PropertyPageContent {...liveData} />
+  } catch {
+    const property = getDemoPropertyBySlug(slug)
+    if (!property) notFound()
+
+    return (
+      <PropertyPageContent
+        property={property}
+        areaInsights={getDemoAreaInsight(property.city_id || '', property.locality)}
+        similarProperties={getSimilarDemoProperties(property)}
+      />
+    )
+  }
 }

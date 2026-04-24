@@ -89,6 +89,14 @@ export default async function AdminDashboard() {
     .order('created_at', { ascending: false })
     .limit(5)
 
+  const getAgentProfile = (
+    profile: { full_name?: string | null; email?: string | null } | { full_name?: string | null; email?: string | null }[] | null | undefined,
+  ) => (Array.isArray(profile) ? profile[0] : profile)
+
+  const getPropertyAgent = (
+    agent: { agency_name?: string | null } | { agency_name?: string | null }[] | null | undefined,
+  ) => (Array.isArray(agent) ? agent[0] : agent)
+
   return (
     <div className="space-y-8">
       {/* Header */}
@@ -211,16 +219,19 @@ export default async function AdminDashboard() {
             {pendingAgentsList && pendingAgentsList.length > 0 ? (
               <div className="space-y-4">
                 {pendingAgentsList.map((agent) => (
+                  (() => {
+                    const profile = getAgentProfile(agent.profile)
+                    return (
                   <div
                     key={agent.id}
                     className="flex items-center justify-between rounded-lg border border-border p-4"
                   >
                     <div>
                       <p className="font-medium text-foreground">
-                        {agent.agency_name || agent.profile?.full_name || 'Agent'}
+                        {agent.agency_name || profile?.full_name || 'Agent'}
                       </p>
                       <p className="text-sm text-muted-foreground">
-                        {agent.profile?.email}
+                        {profile?.email}
                       </p>
                       <p className="text-xs text-muted-foreground">
                         Applied {new Date(agent.created_at).toLocaleDateString()}
@@ -230,6 +241,8 @@ export default async function AdminDashboard() {
                       Pending
                     </Badge>
                   </div>
+                    )
+                  })()
                 ))}
               </div>
             ) : (
@@ -259,6 +272,9 @@ export default async function AdminDashboard() {
             {recentProperties && recentProperties.length > 0 ? (
               <div className="space-y-4">
                 {recentProperties.map((property) => (
+                  (() => {
+                    const agent = getPropertyAgent(property.agent)
+                    return (
                   <div
                     key={property.id}
                     className="flex items-center justify-between rounded-lg border border-border p-4"
@@ -266,7 +282,7 @@ export default async function AdminDashboard() {
                     <div>
                       <p className="font-medium text-foreground">{property.title}</p>
                       <p className="text-sm text-muted-foreground">
-                        by {property.agent?.agency_name || 'Agent'}
+                        by {agent?.agency_name || 'Agent'}
                       </p>
                       <p className="text-xs text-muted-foreground">
                         {new Date(property.created_at).toLocaleDateString()}
@@ -279,6 +295,8 @@ export default async function AdminDashboard() {
                       {property.is_verified ? 'Verified' : 'Pending'}
                     </Badge>
                   </div>
+                    )
+                  })()
                 ))}
               </div>
             ) : (

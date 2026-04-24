@@ -3,28 +3,30 @@ import { Building2, Mail, Phone, MapPin } from 'lucide-react'
 
 const footerLinks = {
   company: [
-    { label: 'About Us', href: '/about' },
-    { label: 'Contact', href: '/contact' },
-    { label: 'Careers', href: '/careers' },
-    { label: 'Blog', href: '/blog' },
+    { label: 'Trusted Discovery', href: '/' },
+    { label: 'City Search', href: '/properties' },
+    { label: 'Video Marketplace', href: '/reels' },
+    { label: 'Marketplace', href: '/marketplace' },
+    { label: 'Become an Agent', href: '/become-agent' },
   ],
   forBuyers: [
     { label: 'Search Properties', href: '/properties' },
     { label: 'Saved Properties', href: '/saved' },
-    { label: 'Property Alerts', href: '/alerts' },
-    { label: 'Home Loans', href: '/loans' },
+    { label: 'Map-Based Browsing', href: '/properties?view=map' },
+    { label: 'Verified Listings', href: '/properties?listing=sale' },
+    { label: 'Listing Videos', href: '/reels' },
+    { label: 'Cars, Bikes, Electronics', href: '/marketplace' },
   ],
   forAgents: [
     { label: 'Become an Agent', href: '/become-agent' },
     { label: 'Agent Dashboard', href: '/agent/dashboard' },
-    { label: 'Pricing Plans', href: '/pricing' },
-    { label: 'Agent Resources', href: '/resources' },
+    { label: 'Lead Inbox', href: '/agent/leads' },
   ],
   cities: [
     { label: 'Mysuru', href: '/city/mysuru' },
-    { label: 'Mangaluru', href: '/city/mangaluru' },
-    { label: 'Hubli-Dharwad', href: '/city/hubli' },
-    { label: 'Belgaum', href: '/city/belgaum' },
+    { label: 'Davangere', href: '/city/davangere' },
+    { label: 'Hubballi', href: '/city/hubli' },
+    { label: 'Shivamogga', href: '/city/shivamogga' },
   ],
 }
 
@@ -42,8 +44,7 @@ export function Footer() {
               <span className="text-2xl font-bold text-foreground">100acres</span>
             </Link>
             <p className="mb-6 max-w-sm text-sm text-muted-foreground">
-              Karnataka&apos;s most trusted real estate platform for Tier-2 and Tier-3 cities. 
-              Every property verified by local agents.
+              100acres is evolving into a local marketplace with trusted property discovery, save-and-share tools, and a growing short-video listing feed.
             </p>
             <div className="space-y-3 text-sm text-muted-foreground">
               <div className="flex items-center gap-2">
@@ -60,7 +61,7 @@ export function Footer() {
               </div>
               <div className="flex items-start gap-2">
                 <MapPin className="h-4 w-4 mt-0.5" />
-                <span>Bangalore, Karnataka, India</span>
+                <span>Karnataka Local Agent Network</span>
               </div>
             </div>
           </div>
@@ -135,8 +136,7 @@ export function Footer() {
         <div className="mt-12 flex flex-col items-center justify-between gap-4 border-t border-border pt-8 text-sm text-muted-foreground md:flex-row">
           <p>&copy; {new Date().getFullYear()} 100acres. All rights reserved.</p>
           <div className="flex gap-6">
-            <Link href="/privacy" className="hover:text-primary">Privacy Policy</Link>
-            <Link href="/terms" className="hover:text-primary">Terms of Service</Link>
+            <Link href="/become-agent" className="hover:text-primary">Join as Agent</Link>
           </div>
         </div>
       </div>

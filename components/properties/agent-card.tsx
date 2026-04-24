@@ -22,9 +22,15 @@ interface AgentCardProps {
   agent: Agent
   propertyId: string
   showReviews?: boolean
+  showContactActions?: boolean
 }
 
-export function AgentCard({ agent, propertyId, showReviews = false }: AgentCardProps) {
+export function AgentCard({
+  agent,
+  propertyId,
+  showReviews = false,
+  showContactActions = true,
+}: AgentCardProps) {
   const [reviewsExpanded, setReviewsExpanded] = useState(false)
   const getInitials = (name: string | null | undefined) => {
     if (!name) return 'A'
@@ -113,27 +119,33 @@ export function AgentCard({ agent, propertyId, showReviews = false }: AgentCardP
         )}
 
         {/* Contact Buttons */}
-        <div className="space-y-2">
-          <Button 
-            className="w-full gap-2" 
-            size="lg"
-            onClick={handleCall}
-          >
-            <Phone className="h-5 w-5" />
-            Call Now
-          </Button>
-          {agent.whatsapp_number && (
+        {showContactActions ? (
+          <div className="space-y-2">
             <Button 
-              variant="outline" 
-              className="w-full gap-2 border-green-500 text-green-600 hover:bg-green-50 hover:text-green-700" 
+              className="w-full gap-2" 
               size="lg"
-              onClick={handleWhatsApp}
+              onClick={handleCall}
             >
-              <MessageCircle className="h-5 w-5" />
-              WhatsApp
+              <Phone className="h-5 w-5" />
+              Call Now
             </Button>
-          )}
-        </div>
+            {agent.whatsapp_number && (
+              <Button 
+                variant="outline" 
+                className="w-full gap-2 border-green-500 text-green-600 hover:bg-green-50 hover:text-green-700" 
+                size="lg"
+                onClick={handleWhatsApp}
+              >
+                <MessageCircle className="h-5 w-5" />
+                WhatsApp
+              </Button>
+            )}
+          </div>
+        ) : (
+          <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+            Contact details unlock for creators on an active paid plan or free trial.
+          </div>
+        )}
 
         {/* Reviews Toggle */}
         {showReviews && (
